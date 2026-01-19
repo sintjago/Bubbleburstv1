@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>버블 폭발</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      background-color: white;
+      font-family: 'Arial', sans-serif;
+    }
+    canvas {
+      display: block;
+    }
+    #infoArea {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin-top: 15px;
+    }
+    #gameTitle {
+      font-size: 28px;
+      font-weight: bold;
+      color: black;
+      margin-bottom: 10px;
+    }
+    #wordProgressArea {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 15px;
+      align-items: center;
+      margin-bottom: 5px;
+      font-size: 20px;
+    }
+    #newWordButton {
+      padding: 8px 16px;
+      font-size: 16px;
+      background-color: #fff;
+      color: #000;
+      border: 2px solid black;
+      cursor: pointer;
+      border-radius: 5px;
+    }
+    #instructions {
+      font-size: 16px;
+      color: black;
+      text-align: center;
+      margin-bottom: 10px;
+    }
+    #gameArea {
+      position: relative;
+      margin: 10px auto;
+      width: 50vw;
+      height: 50vh;
+      background-color: lightblue;
+      border: 5px solid black;
+      border-radius: 10px;
+    }
+    #inputArea {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 5px;
+      margin-bottom: 10px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    #newWordsInput {
+      padding: 6px 10px;
+      font-size: 16px;
+      width: 220px;
+      max-width: 80%;
+      border: 2px solid black;
+      border-radius: 5px;
+    }
+    #submitWords {
+      padding: 8px 16px;
+      font-size: 16px;
+      background-color: #fff;
+      color: #000;
+      border: 2px solid black;
+      cursor: pointer;
+      border-radius: 5px;
+    }
+    #speedControl {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    #speedSlider {
+      width: 120px;
+    }
+    #completedWordsArea {
+      margin-top: 15px;
+      text-align: center;
+    }
+    #completedWordsArea h2 {
+      font-size: 22px;
+      margin-bottom: 5px;
+    }
+    .completedWord {
+      margin: 5px;
+      font-size: 18px;
+    }
+    .completedWord span {
+      color: black;
+      text-decoration: underline;
+      cursor: pointer;
+    }
+    .completedWord a {
+      color: blue;
+      text-decoration: underline;
+    }
+    .action-buttons {
+      margin-left: 10px;
+    }
+    .action-buttons button {
+      margin-left: 6px;
+      padding: 5px 10px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    #soundToggle {
+      font-size: 18px;
+      border: none;
+      background: none;
+      cursor: pointer;
+    }
+    #logCanvas {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="infoArea">
+    <div id="gameTitle">버블 폭발</div>
+    <div id="wordProgressArea">
+      <button id="newWordButton">새 단어</button>
+      <div id="targetWordDisplay">목표 단어:</div>
+      <div id="currentWordDisplay">현재 진행:</div>
+      <div id="timerDisplay">시간: 0초</div>
+    </div>
+    <div id="instructions">
+      "현재 진행"에서 마지막 글자를 두 번 클릭하여 삭제하세요.
+    </div>
+  </div>
+
+  <div id="gameArea"><canvas id="gameCanvas"></canvas></div>
+
+  <div id="inputArea">
+    <label for="newWordsInput">사용자 단어 목록:</label>
+    <input type="text" id="newWordsInput" placeholder="쉼표로 구분된 단어 입력">
+    <button id="submitWords">등록</button>
+    <div id="speedControl">
+      <label for="speedSlider">속도:</label>
+      <input type="range" id="speedSlider" min="0.25" max="2" step="0.25" value="1">
+      <span id="speedValue">1x</span>
+    </div>
+  </div>
+
+  <div id="completedWordsArea">
+    <h2>
+      완료된 단어 
+      <span id="totalScoreDisplay">(점수: 0점)</span>
+      <span class="action-buttons">
+        <button id="resetButton">초기화</button>
+        <button id="saveLogButton">기록 저장</button>
+        <button id="soundToggle" title="소리 켜기/끄기">🔊</button>
+      </span>
+    </h2>
+    <div id="completedWordsList"></div>
+  </div>
+
+  <canvas id="logCanvas" width="800" height="600"></canvas>
+
+  <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = document.getElementById('gameArea').clientWidth;
+    canvas.height = document.getElementById('gameArea').clientHeight;
+
+    const bullets = [], bubbles = [];
+    const turretWidth = 60, turretHeight = 20, bulletSpeed = 5, turretSpeed = 8;
+    const letters = "가나다라마바사아자차카타파하";
+    let words = ["사과", "학교", "우유", "의자", "창문", "물고기", "자동차", "컴퓨터", "하늘", "사람"];
+    let currentWord = [], targetWord = "", startTime = 0, timerInterval = null;
+    let totalScore = 0, voices = [], speedMultiplier = 1, soundOn = true;
+
+    window.speechSynthesis.onvoiceschanged = () => voices = window.speechSynthesis.getVoices();
+
+    function speak(text) {
+      if (!soundOn) return;
+      const utter = new SpeechSynthesisUtterance(text);
+      utter.lang = "ko-KR";
+      utter.voice = voices.find(v => v.lang.startsWith("ko") && v.name.includes("Google")) ||
+                    voices.find(v => v.lang.startsWith("ko")) ||
+                    voices[0];
+      window.speechSynthesis.cancel();
+      setTimeout(() => window.speechSynthesis.speak(utter), 100);
+    }
+
+    class Turret {
+      constructor() {
+        this.x = canvas.width / 2;
+        this.y = canvas.height - turretHeight - 10;
+      }
+      draw() {
+        ctx.fillStyle = 'white';
+        ctx.strokeStyle = 'black';
+        ctx.lineWidth = 3;
+        ctx.fillRect(this.x - turretWidth / 2, this.y, turretWidth, turretHeight);
+        ctx.strokeRect(this.x - turretWidth / 2, this.y, turretWidth, turretHeight);
+      }
+      move(dir) {
+        if (dir === 'left' && this.x - turretWidth / 2 > 0) this.x -= turretSpeed;
+        if (dir === 'right' && this.x + turretWidth / 2 < canvas.width) this.x += turretSpeed;
+      }
+    }
+
+    class Bullet {
+      constructor(x, y) {
+        this.x = x; this.y = y; this.radius = 5;
+      }
+      draw() {
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.fillStyle = 'red'; ctx.fill();
+        ctx.strokeStyle = 'white'; ctx.stroke();
+      }
+      update() { this.y -= bulletSpeed; }
+    }
+
+    class Bubble {
+      constructor(x, y, letter, color, speed) {
+        this.x = x; this.y = y; this.letter = letter;
+        this.color = color; this.speed = speed;
+        this.radius = 15;
+      }
+      draw() {
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.fillStyle = this.color; ctx.fill();
+        ctx.strokeStyle = 'white'; ctx.stroke();
+        ctx.fillStyle = 'white';
+        ctx.font = '14px Arial';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(this.letter, this.x, this.y);
+      }
+      update() {
+        this.y -= this.speed * speedMultiplier;
+        if (this.y + this.radius < 0) this.respawn();
+      }
+      respawn() {
+        this.y = canvas.height + this.radius;
+        this.x = Math.random() * (canvas.width - 30) + 15;
+        this.letter = letters[Math.floor(Math.random() * letters.length)];
+      }
+    }
+
+    const turret = new Turret();
+
+    function resetGame() {
+      currentWord = [];
+      targetWord = words[Math.floor(Math.random() * words.length)];
+      document.getElementById('targetWordDisplay').textContent = `목표 단어: ${targetWord}`;
+      document.getElementById('currentWordDisplay').textContent = `현재 진행: `;
+      document.getElementById('timerDisplay').textContent = `시간: 0초`;
+      bullets.length = 0; bubbles.length = 0;
+      createBubbles(29);
+      startTime = Date.now();
+      clearInterval(timerInterval);
+      timerInterval = setInterval(() => {
+        const seconds = Math.floor((Date.now() - startTime) / 1000);
+        document.getElementById('timerDisplay').textContent = `시간: ${seconds}초`;
+      }, 500);
+    }
+
+    function createBubbles(n) {
+      for (let i = 0; i < n; i++) {
+        const x = Math.random() * (canvas.width - 30) + 15;
+        const y = Math.random() * canvas.height;
+        const l = letters[Math.floor(Math.random() * letters.length)];
+        const c = ['red','green','blue','purple','black','orange'][Math.floor(Math.random() * 6)];
+        const s = 1 + Math.random() * 0.5;
+        bubbles.push(new Bubble(x, y, l, c, s));
+      }
+    }
+
+    function shoot() {
+      bullets.push(new Bullet(turret.x, turret.y));
+    }
+
+    function checkCollision(a, b) {
+      return Math.hypot(a.x - b.x, a.y - b.y) < a.radius + b.radius;
+    }
+
+    function updateTotalScoreDisplay() {
+      document.getElementById('totalScoreDisplay').textContent = `(점수: ${totalScore}점)`;
+    }
+
+    function addCompletedWord(word, time) {
+      const maxPoints = 300;
+      const points = Math.max(0, maxPoints - time);
+      totalScore += points;
+      updateTotalScoreDisplay();
+
+      const div = document.createElement('div');
+      div.className = 'completedWord';
+
+      const span = document.createElement('span');
+      span.textContent = word;
+      span.onclick = () => speak(word);
+
+      const link = document.createElement('a');
+      link.href = `https://context.reverso.net/translation/korean-english/${word}`;
+      link.target = "_blank";
+      link.textContent = "뜻";
+
+      div.appendChild(span);
+      div.append(` - ${time}초 - ${points}점 - `);
+      div.appendChild(link);
+      document.getElementById('completedWordsList').appendChild(div);
+    }
+
+    document.getElementById('newWordButton').onclick = resetGame;
+    document.getElementById('targetWordDisplay').onclick = () => speak(targetWord);
+    document.getElementById('currentWordDisplay').ondblclick = () => {
+      currentWord.pop();
+      document.getElementById('currentWordDisplay').textContent = `현재 진행: ${currentWord.join('')}`;
+    };
+    document.getElementById('submitWords').onclick = () => {
+      const newWords = document.getElementById('newWordsInput').value.trim().split(',').map(w => w.trim()).filter(Boolean);
+      if (newWords.length) {
+        words = newWords;
+        resetGame();
+        document.getElementById('newWordsInput').value = '';
+      }
+    };
+    document.getElementById('resetButton').onclick = () => {
+      totalScore = 0;
+      document.getElementById('completedWordsList').innerHTML = '';
+      updateTotalScoreDisplay();
+    };
+    document.getElementById('soundToggle').onclick = () => {
+      soundOn = !soundOn;
+      document.getElementById('soundToggle').textContent = soundOn ? '🔊' : '🔇';
+    };
+    document.getElementById('speedSlider').oninput = function () {
+      speedMultiplier = parseFloat(this.value);
+      document.getElementById('speedValue').textContent = this.value + 'x';
+    };
+    document.getElementById('saveLogButton').onclick = () => {
+      const logCanvas = document.getElementById('logCanvas');
+      const logCtx = logCanvas.getContext('2d');
+      logCtx.fillStyle = 'white';
+      logCtx.fillRect(0, 0, logCanvas.width, logCanvas.height);
+      logCtx.fillStyle = 'black';
+      logCtx.font = '18px Arial';
+      let y = 30;
+      const now = new Date();
+      logCtx.fillText(`날짜: ${now.toLocaleDateString()} ${now.toLocaleTimeString()}`, 20, y);
+      y += 30;
+      logCtx.fillText(`총 점수: ${totalScore}점`, 20, y);
+      y += 30;
+      document.querySelectorAll('.completedWord').forEach(entry => {
+        if (y < logCanvas.height - 20) {
+          logCtx.fillText(entry.textContent.trim(), 20, y);
+          y += 25;
+        }
+      });
+      const link = document.createElement('a');
+      link.download = '버블_기록.png';
+      link.href = logCanvas.toDataURL();
+      link.click();
+    };
+
+    window.addEventListener('keydown', e => {
+      if (e.code === "ArrowLeft") turret.move("left");
+      if (e.code === "ArrowRight") turret.move("right");
+      if (e.code === "ArrowUp") shoot();
+    });
+
+    resetGame();
+    requestAnimationFrame(function loop() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      bubbles.forEach((b, i) => {
+        b.update(); b.draw();
+        bullets.forEach((bul, j) => {
+          if (checkCollision(b, bul)) {
+            currentWord.push(b.letter);
+            speak(b.letter);
+            document.getElementById('currentWordDisplay').textContent = `현재 진행: ${currentWord.join('')}`;
+            if (currentWord.join('') === targetWord) {
+              clearInterval(timerInterval);
+              const time = Math.floor((Date.now() - startTime) / 1000);
+              addCompletedWord(targetWord, time);
+              speak(targetWord);
+              setTimeout(resetGame, 1000);
+            }
+            bullets.splice(j, 1);
+            bubbles.splice(i, 1);
+            b.respawn();
+          }
+        });
+      });
+      bullets.forEach((b, i) => {
+        b.update(); b.draw();
+        if (b.y < 0) bullets.splice(i, 1);
+      });
+      turret.draw();
+      requestAnimationFrame(loop);
+    });
+  </script>
+</body>
+</html>

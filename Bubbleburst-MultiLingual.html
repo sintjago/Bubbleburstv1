@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bubble Burst</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: white;
+        }
+
+        canvas {
+            display: block;
+            background-color: lightblue;
+        }
+
+        #infoArea {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-top: 20px;
+        }
+
+        #gameTitle {
+            font-size: 30px;
+            font-family: Arial, sans-serif;
+            color: black;
+            margin-bottom: 10px;
+        }
+
+        #languageSelect {
+            font-size: 18px;
+            padding: 5px;
+            margin-bottom: 20px;
+        }
+
+        #targetWordDisplay {
+            font-size: 24px;
+            color: black;
+            font-family: Arial, sans-serif;
+            cursor: pointer;
+        }
+
+        #currentWordDisplay {
+            font-size: 24px;
+            color: black;
+            font-family: Arial, sans-serif;
+        }
+
+        #dealAgain {
+            margin-top: 15px;
+            padding: 10px 20px;
+            font-size: 18px;
+            background-color: #fff;
+            color: #000;
+            border: 2px solid black; /* Added border */
+            cursor: pointer;
+            border-radius: 5px;
+        }
+
+        #dealAgain:hover {
+            background-color: #ddd;
+        }
+
+        #gameArea {
+            position: relative;
+            margin: 20px auto;
+            width: 50vw;
+            height: 50vh;
+            background-color: lightblue;
+            border: 5px solid black;
+        }
+
+        #instructions {
+            font-size: 18px;
+            color: black;
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin-top: 10px;
+        }
+
+        #newWordsInput {
+            margin-top: 10px;
+            padding: 5px;
+            font-size: 16px;
+            width: 100%; /* Make it responsive */
+            max-width: 250px; /* Set maximum width */
+        }
+
+        #submitWords {
+            margin-top: 10px;
+            padding: 10px 20px;
+            font-size: 16px;
+            background-color: #fff;
+            color: #000;
+            border: 2px solid black; /* Added border */
+            cursor: pointer;
+            border-radius: 5px;
+        }
+
+        #submitWords:hover {
+            background-color: #ddd;
+        }
+
+        /* Added styles to position the input field and button below the game area */
+        #inputArea {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div id="infoArea">
+        <div id="gameTitle">Bubble Burst</div>
+        <select id="languageSelect">
+            <option value="english">English</option>
+            <option value="spanish">Spanish</option>
+            <option value="russian">Russian</option>
+            <option value="hindi">Hindi</option>
+            <option value="arabic">Arabic</option>
+        </select>
+        <div id="targetWordDisplay">Target Word: </div>
+        <div id="currentWordDisplay">Your Progress: </div>
+        <button id="dealAgain">Deal Again</button>
+    </div>
+
+    <div id="gameArea">
+        <canvas id="gameCanvas"></canvas>
+    </div>
+
+    <div id="inputArea">
+        <input type="text" id="newWordsInput" placeholder="Enter new words (CSV)" />
+        <button id="submitWords">Submit Words</button>
+    </div>
+
+    <div id="instructions">
+        Double-tap on the last letter in "Your Progress" to remove it.
+    </div>
+
+    <script>
+        const gameArea = document.getElementById('gameArea');
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        canvas.width = gameArea.clientWidth;
+        canvas.height = gameArea.clientHeight;
+
+        const turretWidth = 60;
+        const turretHeight = 20;
+        const bubbles = [];
+        const bullets = [];
+        const turretSpeed = 8;
+        const bulletSpeed = 5;
+
+        let currentWord = [];
+        let currentLanguage = 'english';
+        let voices = [];
+
+        // Fetch the voices available in the browser for speech synthesis
+        function setVoices() {
+            voices = window.speechSynthesis.getVoices();
+        }
+
+        // Retrieve the appropriate voice based on the language
+        function getVoiceByLang(lang) {
+            return voices.find(voice => voice.lang.startsWith(lang)) || voices[0]; // Fallback to the first available voice
+        }
+
+        // Set the appropriate voice for each language
+        const languageVoiceMap = {
+            english: "en-US",
+            spanish: "es-ES",
+            russian: "ru-RU",
+            hindi: "hi-IN",
+            arabic: "ar-SA"
+        };
+
+        window.speechSynthesis.onvoiceschanged = setVoices;
+
+        const languageWords = {
+            english: ["APPLE", "BREAD", "CRANE", "PLANT", "GRAPE", "MANGO", "LEMON", "PEACH", "PLUM", "TOMATO", "BERRY", "CHERRY", "GRAPEFRUIT", "ORANGE", "PINEAPPLE", "CABBAGE", "CARROT", "CELERY", "GARLIC", "ONION"],
+            spanish: ["AMOR", "CASA", "FLOR", "LUNA", "SOL", "PERRO", "GATO", "ARBOLES", "FELIZ", "DINERO", "CAMPO", "MAR", "TIGRE", "PANTERA", "RIO", "نَيْلَة", "فَجْر", "جَنَّة", "سَفِينَة", "مَسْرُور"],
+            russian: ["КОТ", "САД", "ДОМ", "МОРЕ", "ОКНО", "СЛОН", "КНИГА", "МЯСО", "ХЛЕБ", "ДЕРЕВО", "СНЕГ", "ВОДА", "УТКА", "ПТИЦА", "ТРАВА", "СМЕХ", "ДУША", "КОНЬ", "ПТИЦА", "МАРТ"],
+            hindi: ["पानी", "घर", "सपना", "सूरज", "पेड़", "गाड़ी", "बिल्ली", "कुत्ता", "खेल", "किताब", "बाग", "कपड़ा", "बर्तन", "फूल", "पत्ता", "चाँद", "तारा", "गाजर", "गुब्बारा", "सूरजमुखी"],
+            arabic: ["شمس", "قمر", "كتاب", "بيت", "نهر", "فيل", "جمل", "قطة", "كلب", "زهرة", "طعام", "شجرة", "قلم", "لوحة", "مدينة", "سماعة", "مفتاح", "سيارة", "دراجة", "سفينة"]
+        };
+
+        const alphabets = {
+            english: "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+            spanish: "ABCDEFGHIJKLMNÑOPQRSTUVWXYZ",
+            russian: "АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЫЭЮЯ",
+            hindi: "अआइईउऊऋएऐओऔकखगघङचछजझञटठडढणतथदधनपफबभमयरलवशषसह",
+            arabic: "ابتثجحخدذرزسشصضطظعغفقكلمنهوي"
+        };
+
+        let targetWord = languageWords[currentLanguage][Math.floor(Math.random() * languageWords[currentLanguage].length)];
+        let letters = alphabets[currentLanguage];
+
+        // Display the target word at the start
+        document.getElementById('targetWordDisplay').textContent = `Target Word: ${targetWord}`;
+
+        document.getElementById('languageSelect').addEventListener('change', function() {
+            currentLanguage = this.value;
+            targetWord = languageWords[currentLanguage][Math.floor(Math.random() * languageWords[currentLanguage].length)];
+            letters = alphabets[currentLanguage];
+            document.getElementById('targetWordDisplay').textContent = `Target Word: ${targetWord}`;
+            resetGame();
+        });
+
+        // Bubble class with varying speeds based on color
+        class Bubble {
+            constructor(x, y, letter, color, speed) {
+                this.x = x;
+                this.y = y;
+                this.radius = 15;
+                this.letter = letter;
+                this.color = color;
+                this.speed = speed;
+            }
+
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+                ctx.strokeStyle = 'white';
+                ctx.stroke();
+                ctx.font = "15px Arial";
+                ctx.fillStyle = "white";
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText(this.letter, this.x, this.y);
+            }
+
+            update() {
+                this.y -= this.speed;
+                if (this.y + this.radius < 0) {
+                    this.respawn();
+                }
+            }
+
+            respawn() {
+                this.y = canvas.height + this.radius;
+                this.x = Math.random() * (canvas.width - this.radius * 2) + this.radius;
+                this.letter = letters[Math.floor(Math.random() * letters.length)];
+            }
+        }
+
+        // Turret class
+        class Turret {
+            constructor() {
+                this.x = canvas.width / 2;
+                this.y = canvas.height - turretHeight - 10;
+            }
+
+            draw() {
+                ctx.fillStyle = 'white';
+                ctx.fillRect(this.x - turretWidth / 2, this.y, turretWidth, turretHeight);
+            }
+
+            move(dir) {
+                if (dir === "left" && this.x - turretWidth / 2 > 0) {
+                    this.x -= turretSpeed;
+                }
+                if (dir === "right" && this.x + turretWidth / 2 < canvas.width) {
+                    this.x += turretSpeed;
+                }
+            }
+        }
+
+        // Bullet class
+        class Bullet {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.radius = 5;
+            }
+
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = 'red';
+                ctx.fill();
+                ctx.strokeStyle = 'white';
+                ctx.stroke();
+            }
+
+            update() {
+                this.y -= bulletSpeed;
+            }
+        }
+
+        const turret = new Turret();
+
+        // Function to create bubbles with varying speeds based on color
+        function createBubbles(num) {
+            for (let i = 0; i < num; i++) {
+                let x = Math.random() * (canvas.width - 60) + 30;
+                let y = Math.random() * canvas.height;
+                let letter = letters[Math.floor(Math.random() * letters.length)];
+
+                // Assign speed and color randomly
+                let speed;
+                let color;
+                const randomVal = Math.random();
+                
+                if (randomVal < 0.17) {
+                    speed = 0.8;  // Slow speed
+                    color = 'green';
+                } else if (randomVal < 0.33) {
+                    speed = 0.9;  // Slightly faster
+                    color = 'purple';
+                } else if (randomVal < 0.50) {
+                    speed = 1.0;  // Regular speed
+                    color = 'blue';
+                } else if (randomVal < 0.67) {
+                    speed = 1.1;  // Slightly faster
+                    color = 'black';
+                } else if (randomVal < 0.83) {
+                    speed = 1.2;  // Fast
+                    color = 'orange';
+                } else {
+                    speed = 1.3;  // Fastest
+                    color = 'red';
+                }
+
+                bubbles.push(new Bubble(x, y, letter, color, speed));
+            }
+        }
+
+        createBubbles(29);  // Increased the number of bubbles by 20%
+
+        // Fire a bullet from the turret
+        function shootBullet() {
+            const bullet = new Bullet(turret.x, turret.y);
+            bullets.push(bullet);
+        }
+
+        // Check collision between bullets and bubbles
+        function checkCollision(bullet, bubble) {
+            const dist = Math.hypot(bubble.x - bullet.x, bubble.y - bullet.y);
+            return dist < bubble.radius + bullet.radius;
+        }
+
+        // Synthesizer for individual letters
+        function playLetterSound(letter) {
+            const voice = getVoiceByLang(languageVoiceMap[currentLanguage]);
+            const utterance = new SpeechSynthesisUtterance(letter);
+            if (voice) {
+                utterance.voice = voice;
+            }
+            // Play the letter sound
+            window.speechSynthesis.speak(utterance);
+        }
+
+        // Synthesizer for full word
+        function speakWord(word) {
+            const voice = getVoiceByLang(languageVoiceMap[currentLanguage]);
+            const utterance = new SpeechSynthesisUtterance(word);
+            if (voice) {
+                utterance.voice = voice;
+            }
+            // Speak the completed word
+            window.speechSynthesis.speak(utterance);
+        }
+
+        function resetGame() {
+            currentWord = [];
+            targetWord = languageWords[currentLanguage][Math.floor(Math.random() * languageWords[currentLanguage].length)];
+            document.getElementById('targetWordDisplay').textContent = `Target Word: ${targetWord}`;
+            document.getElementById('currentWordDisplay').textContent = `Your Progress: `;
+            bubbles.length = 0; // Clear previous bubbles
+            createBubbles(29);  // Re-create 29 bubbles after reset
+        }
+
+        // Remove a letter on double-click
+        document.getElementById('currentWordDisplay').addEventListener('dblclick', (e) => {
+            if (currentWord.length > 0) {
+                currentWord.pop();  // Remove the last letter
+                document.getElementById('currentWordDisplay').textContent = `Your Progress: ${currentWord.join('')}`;
+            }
+        });
+
+        // Speak the target word when clicked
+        document.getElementById('targetWordDisplay').addEventListener('click', () => {
+            speakWord(targetWord);
+        });
+
+        // Submit new words from input
+        document.getElementById('submitWords').addEventListener('click', () => {
+            const newWords = document.getElementById('newWordsInput').value.split(',').map(word => word.trim().toUpperCase());
+            languageWords[currentLanguage] = languageWords[currentLanguage].concat(newWords);
+            document.getElementById('newWordsInput').value = ''; // Clear the input field
+            alert("New words added successfully!");
+        });
+
+        function gameLoop() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw and update bubbles
+            bubbles.forEach((bubble, bubbleIndex) => {
+                bubble.update();
+                bubble.draw();
+
+                // Check for collisions with bullets
+                bullets.forEach((bullet, bulletIndex) => {
+                    if (checkCollision(bullet, bubble)) {
+                        currentWord.push(bubble.letter);
+                        playLetterSound(bubble.letter);  // Play the letter sound
+
+                        // Update progress display
+                        document.getElementById('currentWordDisplay').textContent = `Your Progress: ${currentWord.join('')}`;
+
+                        // Check if current word matches target word
+                        if (currentWord.join('') === targetWord) {
+                            speakWord(currentWord.join(''));  // Speak the completed word
+                            setTimeout(resetGame, 1000);  // Reset game after a short delay
+                        }
+
+                        // Remove the bubble and bullet
+                        bubbles.splice(bubbleIndex, 1);
+                        bullets.splice(bulletIndex, 1);
+                        bubble.respawn();
+                    }
+                });
+            });
+
+            // Draw and update bullets
+            bullets.forEach((bullet, index) => {
+                bullet.update();
+                bullet.draw();
+
+                // Remove bullet if it goes off-screen
+                if (bullet.y < 0) {
+                    bullets.splice(index, 1);
+                }
+            });
+
+            // Draw turret
+            turret.draw();
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        gameLoop();
+
+        window.addEventListener('keydown', (e) => {
+            if (e.code === "ArrowLeft") turret.move("left");
+            if (e.code === "ArrowRight") turret.move("right");
+            if (e.code === "ArrowUp") shootBullet();  // Shoot with up arrow
+        });
+
+        // Mobile touch support for shooting
+        canvas.addEventListener('touchstart', (e) => {
+            const touchX = e.touches[0].clientX;
+            const touchArea = canvas.getBoundingClientRect();
+
+            if (touchX >= turret.x - turretWidth / 2 && touchX <= turret.x + turretWidth / 2) {
+                shootBullet();
+            }
+        });
+
+        // Touch and drag to move turret
+        canvas.addEventListener('touchmove', (e) => {
+            const touchX = e.touches[0].clientX;
+            const touchArea = canvas.getBoundingClientRect();
+
+            // Prevent movement outside game area
+            if (touchX > touchArea.left + turretWidth / 2 && touchX < touchArea.right - turretWidth / 2) {
+                turret.x = touchX - touchArea.left;
+            }
+        });
+
+        // Deal Again button to reset game
+        document.getElementById('dealAgain').addEventListener('click', resetGame);
+
+        // Adjust canvas size when window is resized
+        window.addEventListener('resize', () => {
+            canvas.width = gameArea.clientWidth;
+            canvas.height = gameArea.clientHeight;
+            turret.x = canvas.width / 2;
+        });
+
+    </script>
+</body>
+</html>

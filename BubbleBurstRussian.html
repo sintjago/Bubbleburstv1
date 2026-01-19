@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Взрыв пузырей</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      background-color: white;
+      font-family: Arial, sans-serif;
+    }
+    canvas {
+      display: block;
+    }
+    #infoArea {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin-top: 15px;
+    }
+    #gameTitle {
+      font-size: 28px;
+      font-weight: bold;
+      color: black;
+      margin-bottom: 10px;
+    }
+    #wordProgressArea {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 15px;
+      align-items: center;
+      margin-bottom: 5px;
+      font-size: 20px;
+    }
+    #newWordButton {
+      padding: 8px 16px;
+      font-size: 16px;
+      background-color: #fff;
+      color: #000;
+      border: 2px solid black;
+      cursor: pointer;
+      border-radius: 5px;
+    }
+    #instructions {
+      font-size: 16px;
+      color: black;
+      text-align: center;
+      margin-bottom: 10px;
+    }
+    #gameArea {
+      position: relative;
+      margin: 10px auto;
+      width: 50vw;
+      height: 50vh;
+      background-color: lightblue;
+      border: 5px solid black;
+      border-radius: 10px;
+    }
+    #inputArea {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 5px;
+      margin-bottom: 10px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    #newWordsInput {
+      padding: 6px 10px;
+      font-size: 16px;
+      width: 220px;
+      max-width: 80%;
+      border: 2px solid black;
+      border-radius: 5px;
+    }
+    #submitWords {
+      padding: 8px 16px;
+      font-size: 16px;
+      background-color: #fff;
+      color: #000;
+      border: 2px solid black;
+      cursor: pointer;
+      border-radius: 5px;
+    }
+    #speedControl {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    #speedSlider {
+      width: 120px;
+    }
+    #completedWordsArea {
+      margin-top: 15px;
+      text-align: center;
+    }
+    #completedWordsArea h2 {
+      font-size: 22px;
+      margin-bottom: 5px;
+    }
+    .completedWord {
+      margin: 5px;
+      font-size: 18px;
+    }
+    .completedWord span {
+      color: black;
+      text-decoration: underline;
+      cursor: pointer;
+    }
+    .completedWord a {
+      color: blue;
+      text-decoration: underline;
+    }
+    .action-buttons {
+      margin-left: 10px;
+    }
+    .action-buttons button {
+      margin-left: 6px;
+      padding: 5px 10px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    #soundToggle {
+      font-size: 18px;
+      border: none;
+      background: none;
+      cursor: pointer;
+    }
+    #logCanvas {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="infoArea">
+    <div id="gameTitle">Взрыв пузырей</div>
+    <div id="wordProgressArea">
+      <button id="newWordButton">Новое слово</button>
+      <div id="targetWordDisplay">Целевое слово:</div>
+      <div id="currentWordDisplay">Ваш прогресс:</div>
+      <div id="timerDisplay">Время: 0с</div>
+    </div>
+    <div id="instructions">
+      Дважды нажмите на последнюю букву в «Ваш прогресс», чтобы удалить её.
+    </div>
+  </div>
+
+  <div id="gameArea"><canvas id="gameCanvas"></canvas></div>
+
+  <div id="inputArea">
+    <label for="newWordsInput">Свой список:</label>
+    <input type="text" id="newWordsInput" placeholder="Введите слова через запятую">
+    <button id="submitWords">Отправить</button>
+    <div id="speedControl">
+      <label for="speedSlider">Скорость:</label>
+      <input type="range" id="speedSlider" min="0.25" max="2" step="0.25" value="1">
+      <span id="speedValue">1x</span>
+    </div>
+  </div>
+
+  <div id="completedWordsArea">
+    <h2>
+      Завершённые слова 
+      <span id="totalScoreDisplay">(Очки: 0)</span>
+      <span class="action-buttons">
+        <button id="resetButton">Сброс</button>
+        <button id="saveLogButton">Сохранить лог</button>
+        <button id="soundToggle" title="Вкл/выкл звук">🔊</button>
+      </span>
+    </h2>
+    <div id="completedWordsList"></div>
+  </div>
+
+  <canvas id="logCanvas" width="800" height="600"></canvas>
+
+  <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = document.getElementById('gameArea').clientWidth;
+    canvas.height = document.getElementById('gameArea').clientHeight;
+
+    const bullets = [], bubbles = [];
+    const turretWidth = 60, turretHeight = 20, bulletSpeed = 5, turretSpeed = 8;
+    const letters = "АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЭЮЯ";
+    let words = ["КОМПЬЮТЕР","КНИГА","ШКОЛА","ОКНО","МОЛОКО","ПАРТА","ЛАМПА","СТОЛ","РУЧКА","ГЛОБУС"];
+    let currentWord = [], targetWord = "", startTime = 0, timerInterval = null;
+    let totalScore = 0, voices = [], speedMultiplier = 1, soundOn = true;
+
+    window.speechSynthesis.onvoiceschanged = () => voices = window.speechSynthesis.getVoices();
+
+    function speak(text) {
+      if (!soundOn) return;
+      const utter = new SpeechSynthesisUtterance(text);
+      utter.voice = voices.find(v => v.lang.startsWith("ru")) || voices[0];
+      window.speechSynthesis.cancel();
+      setTimeout(() => window.speechSynthesis.speak(utter), 100);
+    }
+
+    class Turret {
+      constructor() {
+        this.x = canvas.width / 2;
+        this.y = canvas.height - turretHeight - 10;
+      }
+      draw() {
+        ctx.fillStyle = 'white';
+        ctx.strokeStyle = 'black';
+        ctx.lineWidth = 3;
+        ctx.fillRect(this.x - turretWidth / 2, this.y, turretWidth, turretHeight);
+        ctx.strokeRect(this.x - turretWidth / 2, this.y, turretWidth, turretHeight);
+      }
+      move(dir) {
+        if (dir === 'left' && this.x - turretWidth / 2 > 0) this.x -= turretSpeed;
+        if (dir === 'right' && this.x + turretWidth / 2 < canvas.width) this.x += turretSpeed;
+      }
+    }
+
+    class Bullet {
+      constructor(x, y) {
+        this.x = x; this.y = y; this.radius = 5;
+      }
+      draw() {
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.fillStyle = 'red'; ctx.fill();
+        ctx.strokeStyle = 'white'; ctx.stroke();
+      }
+      update() { this.y -= bulletSpeed; }
+    }
+
+    class Bubble {
+      constructor(x, y, letter, color, speed) {
+        this.x = x; this.y = y; this.letter = letter;
+        this.color = color; this.speed = speed;
+        this.radius = 15;
+      }
+      draw() {
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.fillStyle = this.color; ctx.fill();
+        ctx.strokeStyle = 'white'; ctx.stroke();
+        ctx.fillStyle = 'white';
+        ctx.font = '15px Arial';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(this.letter, this.x, this.y);
+      }
+      update() {
+        this.y -= this.speed * speedMultiplier;
+        if (this.y + this.radius < 0) this.respawn();
+      }
+      respawn() {
+        this.y = canvas.height + this.radius;
+        this.x = Math.random() * (canvas.width - 30) + 15;
+        this.letter = letters[Math.floor(Math.random() * letters.length)];
+      }
+    }
+
+    const turret = new Turret();
+
+    function resetGame() {
+      currentWord = [];
+      targetWord = words[Math.floor(Math.random() * words.length)];
+      document.getElementById('targetWordDisplay').textContent = `Целевое слово: ${targetWord}`;
+      document.getElementById('currentWordDisplay').textContent = `Ваш прогресс: `;
+      document.getElementById('timerDisplay').textContent = `Время: 0с`;
+      bullets.length = 0; bubbles.length = 0;
+      createBubbles(29);
+      startTime = Date.now();
+      clearInterval(timerInterval);
+      timerInterval = setInterval(() => {
+        const seconds = Math.floor((Date.now() - startTime) / 1000);
+        document.getElementById('timerDisplay').textContent = `Время: ${seconds}с`;
+      }, 500);
+    }
+
+    function createBubbles(n) {
+      for (let i = 0; i < n; i++) {
+        const x = Math.random() * (canvas.width - 30) + 15;
+        const y = Math.random() * canvas.height;
+        const l = letters[Math.floor(Math.random() * letters.length)];
+        const c = ['red','green','blue','purple','black','orange'][Math.floor(Math.random() * 6)];
+        const s = 1 + Math.random() * 0.5;
+        bubbles.push(new Bubble(x, y, l, c, s));
+      }
+    }
+
+    function shoot() {
+      bullets.push(new Bullet(turret.x, turret.y));
+    }
+
+    function checkCollision(a, b) {
+      return Math.hypot(a.x - b.x, a.y - b.y) < a.radius + b.radius;
+    }
+
+    function updateTotalScoreDisplay() {
+      document.getElementById('totalScoreDisplay').textContent = `(Очки: ${totalScore})`;
+    }
+
+    function addCompletedWord(word, time) {
+      const maxPoints = 300;
+      const points = Math.max(0, maxPoints - time);
+      totalScore += points;
+      updateTotalScoreDisplay();
+
+      const div = document.createElement('div');
+      div.className = 'completedWord';
+
+      const span = document.createElement('span');
+      span.textContent = word;
+      span.onclick = () => speak(word);
+
+      const link = document.createElement('a');
+      link.href = `https://context.reverso.net/translation/russian-english/${word.toLowerCase()}`;
+      link.target = "_blank";
+      link.textContent = "Определение";
+      link.style.marginLeft = '8px';
+
+      div.appendChild(span);
+      div.append(` - ${time}с - ${points} очков - `);
+      div.appendChild(link);
+      document.getElementById('completedWordsList').appendChild(div);
+    }
+
+    document.getElementById('newWordButton').onclick = resetGame;
+    document.getElementById('targetWordDisplay').onclick = () => speak(targetWord);
+    document.getElementById('currentWordDisplay').ondblclick = () => {
+      currentWord.pop();
+      document.getElementById('currentWordDisplay').textContent = `Ваш прогресс: ${currentWord.join('')}`;
+    };
+    document.getElementById('submitWords').onclick = () => {
+      const newWords = document.getElementById('newWordsInput').value.trim().toUpperCase().split(',').map(w => w.trim()).filter(Boolean);
+      if (newWords.length) {
+        words = newWords;
+        resetGame();
+        document.getElementById('newWordsInput').value = '';
+      }
+    };
+    document.getElementById('resetButton').onclick = () => {
+      totalScore = 0;
+      document.getElementById('completedWordsList').innerHTML = '';
+      updateTotalScoreDisplay();
+    };
+    document.getElementById('soundToggle').onclick = () => {
+      soundOn = !soundOn;
+      document.getElementById('soundToggle').textContent = soundOn ? '🔊' : '🔇';
+    };
+    document.getElementById('speedSlider').oninput = function () {
+      speedMultiplier = parseFloat(this.value);
+      document.getElementById('speedValue').textContent = this.value + 'x';
+    };
+    document.getElementById('saveLogButton').onclick = () => {
+      const logCanvas = document.getElementById('logCanvas');
+      const logCtx = logCanvas.getContext('2d');
+      logCtx.fillStyle = 'white';
+      logCtx.fillRect(0, 0, logCanvas.width, logCanvas.height);
+      logCtx.fillStyle = 'black';
+      logCtx.font = '18px Arial';
+      let y = 30;
+      const now = new Date();
+      logCtx.fillText(`Дата: ${now.toLocaleDateString()} ${now.toLocaleTimeString()}`, 20, y);
+      y += 30;
+      logCtx.fillText(`Общий счёт: ${totalScore}`, 20, y);
+      y += 30;
+      document.querySelectorAll('.completedWord').forEach(entry => {
+        if (y < logCanvas.height - 20) {
+          logCtx.fillText(entry.textContent.trim(), 20, y);
+          y += 25;
+        }
+      });
+      const link = document.createElement('a');
+      link.download = 'log_взрыв_пузырей.png';
+      link.href = logCanvas.toDataURL();
+      link.click();
+    };
+
+    window.addEventListener('keydown', e => {
+      if (e.code === "ArrowLeft") turret.move("left");
+      if (e.code === "ArrowRight") turret.move("right");
+      if (e.code === "ArrowUp") shoot();
+    });
+
+    resetGame();
+    requestAnimationFrame(function loop() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      bubbles.forEach((b, i) => {
+        b.update(); b.draw();
+        bullets.forEach((bul, j) => {
+          if (checkCollision(b, bul)) {
+            currentWord.push(b.letter);
+            speak(b.letter);
+            document.getElementById('currentWordDisplay').textContent = `Ваш прогресс: ${currentWord.join('')}`;
+            if (currentWord.join('') === targetWord) {
+              clearInterval(timerInterval);
+              const time = Math.floor((Date.now() - startTime) / 1000);
+              addCompletedWord(targetWord, time);
+              speak(targetWord);
+              setTimeout(resetGame, 1000);
+            }
+            bullets.splice(j, 1);
+            bubbles.splice(i, 1);
+            b.respawn();
+          }
+        });
+      });
+      bullets.forEach((b, i) => {
+        b.update(); b.draw();
+        if (b.y < 0) bullets.splice(i, 1);
+      });
+      turret.draw();
+      requestAnimationFrame(loop);
+    });
+  </script>
+</body>
+</html>
